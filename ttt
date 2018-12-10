@@ -1,0 +1,301 @@
+#!/bin/bash  
+
+function usage()
+{
+  echo "usage: $0 command"
+  echo "where command is:"
+  echo "  start [X|O]     start a tic-tac-toe game as X or O (default X)"
+  echo "  play row col    play your piece at row (1-3), col (1-3)"
+  echo "  print           print current state of the game with moves"
+
+}
+
+function reset_game()
+{
+  > ~/.ttt/moves
+  > ~/.ttt/gameover
+  > ~/.ttt/board
+	> ~/.ttt/piece
+	echo "Player $challenger" >> ~/.ttt/piece
+	echo "Computer $computer" >> ~/.ttt/piece
+
+  for (( i = 0; i < 9; i++ ))
+  do
+    board[i]="-"
+  done
+}
+
+function print_board()
+{
+  echo "Player: '$challenger', Computer '$computer'"
+  echo " ${board[0]} | ${board[1]} | ${board[2]}"
+  echo "---+---+---"
+  echo " ${board[3]} | ${board[4]} | ${board[5]}"
+  echo "---+---+---"
+  echo " ${board[6]} | ${board[7]} | ${board[8]}"
+  echo ""
+}
+
+function update_board()
+{
+	# Calculate the index position based on the row entered
+  if [ $1 -eq 1  ]; then	
+    index=$(($1+$2-2))
+  elif [ $1 -eq 2 ]; then
+    index=$(($1+$2))
+  else
+    index=$(($1+$2+2))
+  fi
+
+  #update the board with move
+  if [ "${board[$index]}" == "-" ]; then
+    valid_move=1
+    board[$index]=$3
+    echo "put $3 in location ($1, $2)" >> ~/.ttt/moves
+    moves_so_far=$((moves_so_far+1))    #update the total moves
+  else
+    valid_move=0
+  fi
+}
+
+function validate_input()
+{
+	if [[ "$1" =~ ^[1-3]$ ]]; then
+		if [[ "$2" =~ ^[1-3]$ ]]; then
+      update_board $1 $2 $challenger
+    	if [ "$valid_move" -eq 0 ]; then
+    		echo "The position $1 $2 has been occupied"
+				exit 2
+    	fi
+    else
+      valid_move=0
+      echo ""
+      echo "Invalid move. Please enter column position from 1-3." >&2
+			exit 2
+    fi
+  else
+    valid_move=0
+    echo ""
+    echo "Invalid move. Please enter row position from 1-3." >&2
+		exit 2
+  fi
+}
+
+function check()
+{
+  # check if the provided 3 index values are occupied
+  if [ ${board[$1]} != "-" ] && [ ${board[$2]} != "-" ] && [ ${board[$3]} != "-" ]; then
+    if [ ${board[$1]} == ${board[$2]} ] && [ ${board[$2]} == ${board[$3]} ]; then  # check if moves in all 3 indexes are played by same player?
+      game_over=1
+      return 0
+    else
+      return 1
+    fi
+  else
+    return 1
+  fi
+}
+
+function row_match()
+{
+  if check 0 1 2; then
+    line="first row"
+    return
+  elif check 3 4 5; then
+    line="second row"
+    return
+  elif check 6 7 8; then
+    line="third row"
+    return
+  fi
+}
+
+function column_match()
+{
+  if check 0 3 6; then
+    line="first column"
+    return
+  elif check 1 4 7; then
+    line="second column"
+    return
+  elif check 2 5 8; then
+    line="third column"
+    return
+  fi
+}
+
+function diagonal_match()
+{
+  if check 0 4 8; then
+    line="diagonal, left most top to right most bottom"
+    return
+  elif check 2 4 6; then
+    line="diagonal, right most top to left most bottom"
+    return
+  fi
+}
+
+function check_match()
+{
+  row_match
+  column_match
+  diagonal_match
+}
+
+# Computer finds and fills with a random field
+function computer_move()
+{
+  while :
+  do
+    cR=$((RANDOM%3+1))
+    cC=$((RANDOM%3+1))
+    update_board $cR $cC $computer
+    if [ "$valid_move" -eq 1 ]; then
+      return
+    fi
+  done
+}
+
+function check_game_status()
+{
+	if [ $moves_so_far -eq 9 ] && [ $game_over -eq 0 ]; then
+    echo "Game Over, Tie Game" > ~/.ttt/gameover
+		cat ~/.ttt/gameover
+		print_board
+		if [ "$1" == "print" ]; then 
+			cat ~/.ttt/moves 
+		fi
+    exit
+  elif [ $game_over -eq 1 ]; then
+		if [ "$cur_player" == "cha" ]; then
+    	echo "Game over, '$challenger' wins on $line" > ~/.ttt/gameover
+			cat ~/.ttt/gameover
+			print_board
+		  if [ "$1" == "print" ]; then 
+			  cat ~/.ttt/moves 
+		  fi
+		  exit 
+	 elif [ "$cur_player" == "com" ]; then
+    	echo "Game over, '$computer' wins on $line" > ~/.ttt/gameover
+      cat ~/.ttt/gameover
+			print_board
+	  	if [ "$1" == "print" ]; then 
+		  	cat ~/.ttt/moves 
+			fi
+			exit 
+		fi
+	else
+		print_board
+	  if [ "$1" == "print" ]; then 
+		 	cat ~/.ttt/moves 
+		fi
+		return
+	fi
+}
+
+function load_board()
+{
+	boardfile=~/.ttt/board
+	piecefile=~/.ttt/piece
+	i=0;
+	count=0;
+	while IFS= read -r line;
+	do
+		board[$i]=$line;
+		i=$(($i+1));
+		if [ $line != "-" ]; then
+		  count=$(($count+1))
+		fi
+	done < $boardfile
+	moves_so_far=$count
+	game_status=`cat ~/.ttt/gameover | grep -i Game`
+	if [ $? -eq 0 ]; then
+		game_over=1
+	fi
+	challenger=`cat $piecefile | grep "Player" | cut -d' ' -f2`
+	computer=`cat $piecefile| grep "Computer" | cut -d' ' -f2`
+}
+
+function write_board()
+{
+	boardfile=~/.ttt/board
+	piecefile=~/.ttt/piece
+	> $boardfile
+	> $piecefile
+	echo "Player $challenger" >> ~/.ttt/piece
+  echo "Computer $computer" >> ~/.ttt/piece
+	for (( i = 0; i < 9; i++ ))
+	do
+		printf "%s\n" ${board[i]} >> $boardfile
+	done
+}
+
+####################
+
+board=(- - - - - - - - -)
+moves_so_far=0    # Number of moves made so far by Challenger and the Computer together.
+cur_player="cha"  # Who is currently playing. Challenger makes the first move
+valid_move=0      # Keeps the state of challenger's move as valid (1) or invalid (0). Default invalid.
+game_over=0       # Allow the challenger to play until the game is not over
+line=""           # Tracks the winning row or column
+# By default 'X' will be the player and 'O' will be the computer
+challenger='X'		# Default character used by Player
+computer='O'			# Default character used by Computer
+
+if [ "$1" == "start" ]; then
+  if [ "$2" == 'o' ] || [ "$2" == 'O' ]; then
+    challenger='O'
+    computer='X'
+    echo "Challenger: 'O', Computer: 'X'"
+  else
+    echo "Challenger: 'X', Computer: 'O'"
+  fi
+  # Reset the state of the game before starting.
+  reset_game
+
+	#Allow Computer to play first
+	cur_player="com"
+  computer_move
+  check_match
+  print_board
+	write_board
+elif [ "$1" == "play" ]; then
+	load_board
+  game_status=`cat ~/.ttt/gameover | grep -i Game`
+	if [ $? -eq 0 ]; then
+		cat ~/.ttt/gameover
+		print_board
+    exit 0
+	fi
+  cur_player="cha"
+
+	# Validate the user move and prompt him to re-enter his move if its illegal
+  validate_input $2 $3
+
+	# if it is a valid move then check if the challenger won the game and print the state and moves
+  if [ $valid_move -eq 1 ]; then
+    check_match
+    print_board
+		write_board
+	  check_game_status
+
+		# Allow computer to play next move if game is not over yet.
+		cur_player="com"
+    computer_move
+		check_match
+		sleep 1
+		print_board
+		write_board
+		check_game_status
+  else
+			check_game_status
+			echo "Illegal move from Challenger"
+			exit
+  fi
+elif [ "$1" == "print" ]; then
+	load_board
+	check_game_status print
+else
+	usage
+	exit
+fi
